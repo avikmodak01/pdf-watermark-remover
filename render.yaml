@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: pdf-watermark-remover
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn server:app --workers 1 --timeout 120
