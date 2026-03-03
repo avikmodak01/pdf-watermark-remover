@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Watermark Remover</title>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0f1e;
+      --surface: #111827;
+      --surface2: #1f2937;
+      --surface3: #374151;
+      --border: #374151;
+      --text: #f9fafb;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --accent-light: rgba(99,102,241,0.15);
+      --success: #10b981;
+      --success-hover: #059669;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* ---- LAYOUT ---- */
+    .app { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+
+    .header {
+      text-align: center;
+      padding: 40px 20px 32px;
+      position: relative;
+    }
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-light);
+      color: var(--accent);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 100px;
+      padding: 4px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #f9fafb 0%, #d1d5db 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+    .header p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    .privacy-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    /* ---- DROP ZONE ---- */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 60px 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--surface);
+      position: relative;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-light);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon {
+      width: 56px; height: 56px;
+      background: var(--accent-light);
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      color: var(--accent);
+      font-size: 28px;
+    }
+    .drop-zone h3 { font-size: 1.2rem; font-weight: 600; margin-bottom: 8px; }
+    .drop-zone p { color: var(--text-muted); font-size: 0.9rem; }
+    .drop-zone .browse-link { color: var(--accent); text-decoration: underline; cursor: pointer; }
+
+    /* ---- CARDS ---- */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-title .icon {
+      width: 28px; height: 28px;
+      background: var(--accent-light);
+      color: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+
+    /* ---- FILE INFO ---- */
+    .file-info {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      margin-bottom: 20px;
+    }
+    .file-icon { font-size: 28px; }
+    .file-details { flex: 1; min-width: 0; }
+    .file-name { font-weight: 600; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-meta { color: var(--text-muted); font-size: 0.8rem; }
+    .change-file-btn {
+      background: none; border: 1px solid var(--border);
+      color: var(--text-muted); padding: 6px 12px; border-radius: 6px;
+      cursor: pointer; font-size: 13px; transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .change-file-btn:hover { border-color: var(--text-muted); color: var(--text); }
+
+    /* ---- OPTIONS ---- */
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    @media (max-width: 600px) { .options-grid { grid-template-columns: 1fr; } }
+
+    .option-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .option-item:hover { border-color: var(--accent); }
+    .option-item input[type="checkbox"] { display: none; }
+    .option-check {
+      width: 18px; height: 18px; min-width: 18px;
+      border: 2px solid var(--border);
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 1px;
+      transition: all 0.15s;
+      font-size: 11px;
+    }
+    .option-item input:checked ~ * .option-check,
+    .option-item.checked .option-check {
+      background: var(--accent); border-color: var(--accent); color: white;
+    }
+    .option-text strong { display: block; font-size: 0.875rem; font-weight: 600; }
+    .option-text small { color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
+
+    .keywords-row { margin-bottom: 4px; }
+    .keywords-row label {
+      display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: 6px;
+    }
+    .keywords-input-wrap { display: flex; gap: 8px; }
+    .keyword-input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 9px 14px;
+      color: var(--text);
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .keyword-input:focus { border-color: var(--accent); }
+    .keyword-input::placeholder { color: var(--text-dim); }
+
+    /* ---- BUTTONS ---- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 11px 22px; border-radius: var(--radius-sm);
+      font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      border: none; transition: all 0.15s; text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--accent); color: white; width: 100%;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-success { background: var(--success); color: white; }
+    .btn-success:hover { background: var(--success-hover); }
+    .btn-ghost {
+      background: none; border: 1px solid var(--border); color: var(--text-muted);
+    }
+    .btn-ghost:hover { border-color: var(--text-muted); color: var(--text); }
+
+    /* ---- PROGRESS ---- */
+    .progress-wrap { display: flex; align-items: center; gap: 12px; padding: 14px 0; }
+    .progress-bar-bg {
+      flex: 1; height: 6px; background: var(--surface2);
+      border-radius: 100px; overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%; background: var(--accent);
+      border-radius: 100px; transition: width 0.3s ease;
+    }
+    .progress-label { color: var(--text-muted); font-size: 0.82rem; min-width: 80px; text-align: right; }
+
+    /* ---- STATUS MESSAGES ---- */
+    .status-msg {
+      padding: 10px 14px; border-radius: var(--radius-sm);
+      font-size: 0.875rem; margin-top: 12px;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .status-success { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
+    .status-warning { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+    .status-error   { background: rgba(239,68,68,0.12);  color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+    .status-info    { background: rgba(99,102,241,0.12); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.2); }
+
+    /* ---- LOG ---- */
+    .log-section { margin-top: 12px; }
+    .log-toggle {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 0.82rem; cursor: pointer; padding: 4px 0;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .log-toggle:hover { color: var(--text); }
+    .log-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      margin-top: 8px;
+      font-size: 0.78rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: var(--text-muted);
+      max-height: 160px;
+      overflow-y: auto;
+      line-height: 1.7;
+    }
+
+    /* ---- PREVIEW ---- */
+    .preview-section { margin-top: 8px; }
+    .preview-section h2 {
+      font-size: 1rem; font-weight: 700; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px; color: var(--text);
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 700px) {
+      .preview-grid { grid-template-columns: 1fr; }
+    }
+
+    .preview-pane {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .preview-pane-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .preview-pane-title {
+      font-size: 0.875rem; font-weight: 700;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 100px;
+    }
+    .badge-original { background: rgba(107,114,128,0.2); color: var(--text-muted); }
+    .badge-processed { background: rgba(16,185,129,0.15); color: #34d399; }
+
+    .canvas-wrapper {
+      background: #e5e7eb;
+      min-height: 400px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; position: relative;
+    }
+    .canvas-wrapper canvas { display: block; max-width: 100%; }
+    .canvas-placeholder {
+      color: #9ca3af; font-size: 0.875rem; text-align: center; padding: 40px;
+    }
+    .preview-pane-footer {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .page-nav { display: flex; align-items: center; gap: 6px; }
+    .page-nav-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 5px 10px; border-radius: 6px;
+      cursor: pointer; font-size: 13px; transition: all 0.15s;
+    }
+    .page-nav-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .page-nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .page-info { font-size: 12px; color: var(--text-muted); min-width: 70px; text-align: center; }
+
+    .download-row { padding: 14px 16px; border-top: 1px solid var(--border); }
+
+    /* ---- RESULT STATS ---- */
+    .result-stats {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px;
+    }
+    .stat-pill {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 100px; font-size: 0.8rem;
+    }
+    .stat-pill .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+    }
+    .dot-green { background: var(--success); }
+    .dot-yellow { background: var(--warning); }
+    .dot-blue { background: var(--accent); }
+
+    /* ---- SPINNER ---- */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+
+    /* ---- UTILS ---- */
+    [hidden] { display: none !important; }
+    .mt-4 { margin-top: 16px; }
+    .separator {
+      border: none; border-top: 1px solid var(--border);
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-badge">🔒 100% Client-side — no uploads</div>
+    <h1>PDF Watermark Remover</h1>
+    <p>Remove watermarks from PDF files entirely in your browser. No data ever leaves your device.</p>
+    <div class="privacy-note">🛡️ Files are processed locally and never sent to any server</div>
+  </header>
+
+  <!-- UPLOAD SECTION -->
+  <div id="upload-section">
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".pdf,.PDF">
+      <div class="drop-icon">📄</div>
+      <h3>Drop your PDF here</h3>
+      <p>or <span class="browse-link">browse to choose a file</span></p>
+      <p style="margin-top:8px; font-size:0.8rem; color:var(--text-dim)">Supports .pdf files up to 100 MB</p>
+    </div>
+  </div>
+
+  <!-- MAIN SECTION (shown after file load) -->
+  <div id="main-section" hidden>
+
+    <!-- File Info + Options Card -->
+    <div class="card">
+      <div class="card-title">
+        <span class="icon">⚙️</span> Removal Options
+      </div>
+
+      <!-- File info row -->
+      <div class="file-info" id="file-info">
+        <span class="file-icon">📄</span>
+        <div class="file-details">
+          <div class="file-name" id="file-name-display">document.pdf</div>
+          <div class="file-meta" id="file-meta-display">0 pages · 0 KB</div>
+        </div>
+        <button class="change-file-btn" id="change-file-btn">Change File</button>
+      </div>
+
+      <!-- Strategy checkboxes -->
+      <div class="options-grid">
+        <div class="option-item checked" id="lbl-annotations" onclick="toggleOption('opt-annotations')">
+          <div class="option-check" id="chk-annotations">✓</div>
+          <div class="option-text">
+            <strong>Remove Annotations</strong>
+            <small>Stamp annotations, pop-ups, and overlay watermarks added as PDF annotations</small>
+          </div>
+          <input type="checkbox" id="opt-annotations" checked>
+        </div>
+
+        <div class="option-item checked" id="lbl-rotated" onclick="toggleOption('opt-rotated')">
+          <div class="option-check" id="chk-rotated">✓</div>
+          <div class="option-text">
+            <strong>Remove Rotated Text Overlays</strong>
+            <small>Diagonal stamps like "CONFIDENTIAL", "DRAFT", "SAMPLE" at any angle</small>
+          </div>
+          <input type="checkbox" id="opt-rotated" checked>
+        </div>
+
+        <div class="option-item checked" id="lbl-transparent" onclick="toggleOption('opt-transparent')">
+          <div class="option-check" id="chk-transparent">✓</div>
+          <div class="option-text">
+            <strong>Remove Semi-transparent Content</strong>
+            <small>Text or graphics with opacity / alpha below 0.9 overlaid on page content</small>
+          </div>
+          <input type="checkbox" id="opt-transparent" checked>
+        </div>
+
+        <div class="option-item checked" id="lbl-xobjects" onclick="toggleOption('opt-xobjects')">
+          <div class="option-check" id="chk-xobjects">✓</div>
+          <div class="option-text">
+            <strong>Remove Watermark Form XObjects</strong>
+            <small>Embedded Form XObjects (common with iLovePDF, SmallPDF, online tools)</small>
+          </div>
+          <input type="checkbox" id="opt-xobjects" checked>
+        </div>
+      </div>
+
+      <!-- Keywords -->
+      <div class="keywords-row">
+        <label for="keyword-input">Remove text matching keywords <span style="color:var(--text-dim);font-weight:400;">(case-insensitive, comma-separated)</span></label>
+        <div class="keywords-input-wrap">
+          <input class="keyword-input" id="keyword-input" type="text"
+            placeholder="WATERMARK, CONFIDENTIAL, DRAFT, SAMPLE, DO NOT COPY, COPY">
+        </div>
+      </div>
+
+      <hr class="separator" style="margin:16px 0 14px">
+
+      <button class="btn btn-primary" id="process-btn" onclick="startProcessing()">
+        🪄 Remove Watermarks
+      </button>
+    </div>
+
+    <!-- Progress -->
+    <div id="progress-card" class="card" hidden>
+      <div class="card-title"><span class="icon"><span class="spinner"></span></span> Processing PDF…</div>
+      <div class="progress-wrap">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+        <span class="progress-label" id="progress-label">0%</span>
+      </div>
+      <div id="progress-msg" style="font-size:0.82rem; color:var(--text-muted);"></div>
+    </div>
+
+    <!-- Result message -->
+    <div id="result-msg" hidden></div>
+
+    <!-- Result stats -->
+    <div id="result-stats" class="result-stats" hidden></div>
+
+    <!-- Log -->
+    <div id="log-section" class="log-section" hidden>
+      <button class="log-toggle" onclick="toggleLog()">▶ Show processing log</button>
+      <div class="log-box" id="log-box" hidden></div>
+    </div>
+
+    <!-- Preview -->
+    <div class="preview-section mt-4" id="preview-section" hidden>
+      <h2>📋 Before / After Preview</h2>
+      <div class="preview-grid">
+
+        <!-- Before -->
+        <div class="preview-pane">
+          <div class="preview-pane-header">
+            <div class="preview-pane-title">
+              Original <span class="badge badge-original">BEFORE</span>
+            </div>
+          </div>
+          <div class="canvas-wrapper" id="before-wrapper">
+            <div class="canvas-placeholder">Loading preview…</div>
+          </div>
+          <div class="preview-pane-footer">
+            <div class="page-nav">
+              <button class="page-nav-btn" id="before-prev" onclick="changePage('before',-1)" disabled>‹</button>
+              <span class="page-info" id="before-page-info">– / –</span>
+              <button class="page-nav-btn" id="before-next" onclick="changePage('before',1)" disabled>›</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- After -->
+        <div class="preview-pane">
+          <div class="preview-pane-header">
+            <div class="preview-pane-title">
+              Processed <span class="badge badge-processed">AFTER</span>
+            </div>
+          </div>
+          <div class="canvas-wrapper" id="after-wrapper">
+            <div class="canvas-placeholder">Process the PDF to see result</div>
+          </div>
+          <div class="preview-pane-footer">
+            <div class="page-nav">
+              <button class="page-nav-btn" id="after-prev" onclick="changePage('after',-1)" disabled>‹</button>
+              <span class="page-info" id="after-page-info">– / –</span>
+              <button class="page-nav-btn" id="after-next" onclick="changePage('after',1)" disabled>›</button>
+            </div>
+          </div>
+          <div class="download-row" id="download-row" hidden>
+            <button class="btn btn-success" style="width:100%" onclick="downloadResult()">
+              ⬇️ Download Processed PDF
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /main-section -->
+</div><!-- /app -->
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let originalBytes = null;   // Uint8Array of the original PDF
+let processedBytes = null;  // Uint8Array of the processed PDF
+let originalFileName = 'output.pdf';
+let originalPageCount = 0;
+
+let beforePDF = null;  // pdfjs document
+let afterPDF  = null;  // pdfjs document
+let beforePage = 1;
+let afterPage  = 1;
+
+const logs = [];
+
+// ============================================================
+// LOGGING
+// ============================================================
+function log(msg) {
+  logs.push(msg);
+  const box = document.getElementById('log-box');
+  if (box) box.innerHTML = logs.map(l => `<div>${escHtml(l)}</div>`).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleLog() {
+  const box = document.getElementById('log-box');
+  const btn = document.querySelector('.log-toggle');
+  if (box.hidden) {
+    box.hidden = false;
+    btn.textContent = '▼ Hide processing log';
+  } else {
+    box.hidden = true;
+    btn.textContent = '▶ Show processing log';
+  }
+}
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+function toggleOption(inputId) {
+  const input = document.getElementById(inputId);
+  input.checked = !input.checked;
+  const suffix = inputId.replace('opt-', '');
+  const label = document.getElementById('lbl-' + suffix);
+  const check = document.getElementById('chk-' + suffix);
+  if (label) label.classList.toggle('checked', input.checked);
+  if (check) check.textContent = input.checked ? '✓' : '';
+}
+
+function setProgress(pct, msg) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = Math.round(pct) + '%';
+  if (msg) document.getElementById('progress-msg').textContent = msg;
+}
+
+function showStatus(type, msg) {
+  const el = document.getElementById('result-msg');
+  el.hidden = false;
+  el.innerHTML = `<div class="status-msg status-${type}">${msg}</div>`;
+}
+
+// ============================================================
+// FILE UPLOAD
+// ============================================================
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+fileInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) loadFile(f);
+});
+document.getElementById('change-file-btn').addEventListener('click', () => {
+  document.getElementById('upload-section').hidden = false;
+  document.getElementById('main-section').hidden = true;
+  originalBytes = null; processedBytes = null;
+  logs.length = 0;
+});
+
+async function loadFile(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
+    alert('Please select a PDF file.'); return;
+  }
+  originalFileName = file.name;
+
+  const buf = await file.arrayBuffer();
+  originalBytes = new Uint8Array(buf);
+
+  // Count pages
+  try {
+    const pd = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
+    originalPageCount = pd.numPages;
+    beforePDF = pd;
+  } catch(e) {
+    originalPageCount = '?';
+  }
+
+  document.getElementById('file-name-display').textContent = file.name;
+  document.getElementById('file-meta-display').textContent =
+    `${originalPageCount} page${originalPageCount !== 1 ? 's' : ''} · ${(file.size/1024).toFixed(1)} KB`;
+
+  document.getElementById('upload-section').hidden = true;
+  document.getElementById('main-section').hidden = false;
+  document.getElementById('result-msg').hidden = true;
+  document.getElementById('result-stats').hidden = true;
+  document.getElementById('log-section').hidden = true;
+  document.getElementById('progress-card').hidden = true;
+  document.getElementById('download-row').hidden = true;
+  document.getElementById('after-wrapper').innerHTML =
+    '<div class="canvas-placeholder">Process the PDF to see result</div>';
+
+  // Show before preview
+  document.getElementById('preview-section').hidden = false;
+  beforePage = 1;
+  await renderPage('before', beforePDF, beforePage);
+  updateNavButtons('before', beforePage, originalPageCount);
+}
+
+// ============================================================
+// PDF.JS RENDERING
+// ============================================================
+async function renderPage(which, pdfDoc, pageNum) {
+  const wrapperId = which + '-wrapper';
+  const wrapper = document.getElementById(wrapperId);
+
+  if (!pdfDoc) {
+    wrapper.innerHTML = '<div class="canvas-placeholder">No PDF loaded</div>';
+    return;
+  }
+
+  try {
+    const page = await pdfDoc.getPage(pageNum);
+    const totalPages = pdfDoc.numPages;
+
+    const viewport = page.getViewport({ scale: 1 });
+    const maxW = wrapper.offsetWidth || 480;
+    const scale = Math.min(maxW / viewport.width, 1.5);
+    const scaledViewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = scaledViewport.width;
+    canvas.height = scaledViewport.height;
+    const ctx = canvas.getContext('2d');
+
+    wrapper.innerHTML = '';
+    wrapper.appendChild(canvas);
+
+    await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+
+    document.getElementById(which + '-page-info').textContent = `${pageNum} / ${totalPages}`;
+    updateNavButtons(which, pageNum, totalPages);
+  } catch(e) {
+    wrapper.innerHTML = `<div class="canvas-placeholder">Preview error: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function updateNavButtons(which, page, total) {
+  document.getElementById(which + '-prev').disabled = page <= 1;
+  document.getElementById(which + '-next').disabled = page >= total;
+}
+
+async function changePage(which, delta) {
+  if (which === 'before' && beforePDF) {
+    beforePage = Math.max(1, Math.min(beforePDF.numPages, beforePage + delta));
+    await renderPage('before', beforePDF, beforePage);
+  } else if (which === 'after' && afterPDF) {
+    afterPage = Math.max(1, Math.min(afterPDF.numPages, afterPage + delta));
+    await renderPage('after', afterPDF, afterPage);
+  }
+}
+
+// ============================================================
+// MAIN PROCESSING
+// ============================================================
+const BACKEND_URL = '';
+let backendAvailable = false;
+
+// Check if the Python backend is reachable on page load
+(async () => {
+  try {
+    const r = await fetch(BACKEND_URL + '/health', { signal: AbortSignal.timeout(2000) });
+    if (r.ok) {
+      backendAvailable = true;
+      const data = await r.json();
+      log(`Backend ready — PyMuPDF ${data.pymupdf}`);
+    }
+  } catch(_) { /* backend not running */ }
+})();
+
+async function startProcessing() {
+  if (!originalBytes) return;
+
+  const opts = {
+    removeAnnotations: document.getElementById('opt-annotations').checked,
+    removeRotated:     document.getElementById('opt-rotated').checked,
+    removeTransparent: document.getElementById('opt-transparent').checked,
+    removeXObjects:    document.getElementById('opt-xobjects').checked,
+    keywords: document.getElementById('keyword-input').value
+      .split(',').map(k => k.trim()).filter(k => k.length > 0),
+  };
+
+  logs.length = 0;
+  document.getElementById('log-box').innerHTML = '';
+
+  document.getElementById('progress-card').hidden = false;
+  document.getElementById('result-msg').hidden = true;
+  document.getElementById('result-stats').hidden = true;
+  document.getElementById('log-section').hidden = false;
+  document.getElementById('download-row').hidden = true;
+  document.getElementById('process-btn').disabled = true;
+
+  setProgress(5, 'Sending to Python backend…');
+
+  try {
+    let result;
+
+    // Re-check backend availability in case it started after page load
+    if (!backendAvailable) {
+      try {
+        const r = await fetch(BACKEND_URL + '/health', { signal: AbortSignal.timeout(1500) });
+        backendAvailable = r.ok;
+      } catch(_) {}
+    }
+
+    if (backendAvailable) {
+      result = await processWithBackend(originalBytes, opts);
+    } else {
+      log('⚠️  Python backend not reachable — falling back to client-side processing');
+      setProgress(10, 'Using client-side fallback…');
+      result = await removeWatermarks(originalBytes, opts);
+    }
+
+    processedBytes = result.bytes;
+
+    setProgress(90, 'Rendering preview…');
+    afterPDF = await pdfjsLib.getDocument({ data: processedBytes.slice() }).promise;
+    afterPage = 1;
+    await renderPage('after', afterPDF, afterPage);
+    updateNavButtons('after', afterPage, afterPDF.numPages);
+
+    setProgress(100, 'Done!');
+    document.getElementById('progress-card').hidden = true;
+    document.getElementById('download-row').hidden = false;
+
+    const stats = result.stats;
+    const statsEl = document.getElementById('result-stats');
+    statsEl.hidden = false;
+    const total = (stats.annotationsRemoved || 0) + (stats.blocksRemoved || 0) +
+                  (stats.xobjectsRemoved || 0) + (stats.redacted || 0) + (stats.ocgRemoved || 0);
+    statsEl.innerHTML = `
+      <div class="stat-pill"><span class="dot dot-green"></span> ${stats.annotationsRemoved || 0} annotation${stats.annotationsRemoved !== 1 ? 's' : ''} removed</div>
+      <div class="stat-pill"><span class="dot dot-blue"></span>  ${stats.streamsProcessed || 0} stream${(stats.streamsProcessed || 0) !== 1 ? 's' : ''} processed</div>
+      <div class="stat-pill"><span class="dot dot-yellow"></span>${stats.blocksRemoved || 0} content block${stats.blocksRemoved !== 1 ? 's' : ''} removed</div>
+      <div class="stat-pill"><span class="dot dot-green"></span> ${stats.xobjectsRemoved || 0} XObject${stats.xobjectsRemoved !== 1 ? 's' : ''} removed</div>
+      ${(stats.redacted || 0) > 0 ? `<div class="stat-pill"><span class="dot dot-blue"></span> ${stats.redacted} text area${stats.redacted !== 1 ? 's' : ''} redacted</div>` : ''}
+      ${(stats.ocgRemoved || 0) > 0 ? `<div class="stat-pill"><span class="dot dot-yellow"></span> ${stats.ocgRemoved} OCG layer${stats.ocgRemoved !== 1 ? 's' : ''} removed</div>` : ''}
+    `;
+
+    if (total === 0) {
+      showStatus('warning',
+        '⚠️ No watermarks were detected with the selected options. ' +
+        'Try adding specific keywords or enable all removal strategies.');
+    } else {
+      showStatus('success',
+        `✅ Removed ${total} watermark element(s) total. ` +
+        `Compare the before/after previews and download when satisfied.`);
+    }
+
+  } catch(e) {
+    console.error(e);
+    document.getElementById('progress-card').hidden = true;
+    showStatus('error', '❌ Error: ' + escHtml(e.message));
+    log('FATAL: ' + e.message);
+  }
+
+  document.getElementById('process-btn').disabled = false;
+}
+
+// ── Python backend call ─────────────────────────────────────
+async function processWithBackend(pdfBytes, opts) {
+  setProgress(10, 'Uploading PDF to local backend…');
+
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const formData = new FormData();
+  formData.append('file', blob, originalFileName);
+  formData.append('options', JSON.stringify(opts));
+
+  setProgress(20, 'Python backend processing…');
+
+  const resp = await fetch(BACKEND_URL + '/remove-watermark', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!resp.ok) {
+    let errMsg = `Backend error ${resp.status}`;
+    try { const j = await resp.json(); errMsg = j.error || errMsg; } catch(_) {}
+    throw new Error(errMsg);
+  }
+
+  setProgress(80, 'Receiving processed PDF…');
+
+  const resultBytes = new Uint8Array(await resp.arrayBuffer());
+
+  // Parse stats and logs from response headers
+  let stats = { annotationsRemoved: 0, blocksRemoved: 0, xobjectsRemoved: 0,
+                redacted: 0, ocgRemoved: 0, streamsProcessed: 0 };
+  let serverLogs = [];
+  try { stats = JSON.parse(resp.headers.get('X-Stats') || '{}'); } catch(_) {}
+  try { serverLogs = JSON.parse(resp.headers.get('X-Logs') || '[]'); } catch(_) {}
+
+  serverLogs.forEach(l => log(l));
+  log(`Backend finished — original: ${(pdfBytes.length/1024).toFixed(1)} KB → output: ${(resultBytes.length/1024).toFixed(1)} KB`);
+
+  return { bytes: resultBytes, stats };
+}
+
+// ============================================================
+// DOWNLOAD
+// ============================================================
+function downloadResult() {
+  if (!processedBytes) return;
+  const blob = new Blob([processedBytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = originalFileName.replace(/\.pdf$/i, '_clean.pdf');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// WATERMARK REMOVAL ENGINE
+// ============================================================
+
+async function removeWatermarks(pdfBytes, opts) {
+  const {
+    PDFDocument, PDFName, PDFRef, PDFArray,
+    PDFDict, PDFNull, PDFBool, PDFNumber, PDFString,
+  } = PDFLib;
+
+  const stats = {
+    annotationsRemoved: 0,
+    streamsProcessed: 0,
+    blocksRemoved: 0,
+    xobjectsRemoved: 0,
+  };
+
+  const pdfDoc = await PDFDocument.load(pdfBytes, {
+    ignoreEncryption: true,
+    updateMetadata: false,
+  });
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+  log(`Loaded PDF: ${totalPages} page(s)`);
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    setProgress(5 + 85 * (i / totalPages), `Processing page ${i+1} of ${totalPages}…`);
+
+    // ---- Strategy 1: Remove annotations ----
+    if (opts.removeAnnotations) {
+      const removed = removeAnnotationsFromPage(pdfDoc, page);
+      stats.annotationsRemoved += removed;
+      if (removed > 0) log(`  Page ${i+1}: removed ${removed} annotation(s)`);
+    }
+
+    // ---- Strategy 2: Remove watermark XObjects ----
+    if (opts.removeXObjects) {
+      const removed = removeWatermarkXObjects(pdfDoc, page, opts);
+      stats.xobjectsRemoved += removed;
+      if (removed > 0) log(`  Page ${i+1}: removed ${removed} XObject(s)`);
+    }
+
+    // ---- Strategy 3: Process content streams ----
+    const { processed, blocksRemoved } =
+      await processPageContentStreams(pdfDoc, page, opts);
+    stats.streamsProcessed += processed;
+    stats.blocksRemoved   += blocksRemoved;
+    if (blocksRemoved > 0) log(`  Page ${i+1}: removed ${blocksRemoved} content block(s) from ${processed} stream(s)`);
+  }
+
+  log(`Done. Total: ${stats.annotationsRemoved} annots, ${stats.blocksRemoved} blocks, ${stats.xobjectsRemoved} xobjs`);
+
+  const savedBytes = await pdfDoc.save({ useObjectStreams: false });
+  return { bytes: savedBytes, stats };
+}
+
+// ---- Annotation removal ----
+function removeAnnotationsFromPage(pdfDoc, page) {
+  const { PDFName } = PDFLib;
+  const annotsKey = PDFName.of('Annots');
+  const pageNode = page.node;
+  if (!pageNode.has(annotsKey)) return 0;
+
+  const annotsVal = pageNode.get(annotsKey);
+  let count = 0;
+
+  // Resolve annotation array
+  let annotsArray = null;
+  try {
+    if (annotsVal instanceof PDFLib.PDFRef) {
+      const obj = pdfDoc.context.lookup(annotsVal);
+      if (obj instanceof PDFLib.PDFArray) annotsArray = obj;
+    } else if (annotsVal instanceof PDFLib.PDFArray) {
+      annotsArray = annotsVal;
+    }
+  } catch(e) { /* ignore */ }
+
+  if (annotsArray) {
+    count = annotsArray.size();
+  }
+
+  pageNode.set(annotsKey, pdfDoc.context.obj([]));
+  return count;
+}
+
+// ---- XObject removal ----
+function removeWatermarkXObjects(pdfDoc, page, opts) {
+  const { PDFName } = PDFLib;
+  let removed = 0;
+  const pageNode = page.node;
+
+  try {
+    const resources = pageNode.get(PDFName.of('Resources'));
+    if (!resources) return 0;
+
+    let resDict = resources;
+    if (resources instanceof PDFLib.PDFRef) {
+      resDict = pdfDoc.context.lookup(resources);
+    }
+    if (!resDict || !(resDict instanceof PDFLib.PDFDict)) return 0;
+
+    const xobjectMap = resDict.get(PDFName.of('XObject'));
+    if (!xobjectMap) return 0;
+
+    let xobjDict = xobjectMap;
+    if (xobjectMap instanceof PDFLib.PDFRef) {
+      xobjDict = pdfDoc.context.lookup(xobjectMap);
+    }
+    if (!xobjDict || !(xobjDict instanceof PDFLib.PDFDict)) return 0;
+
+    const toDelete = [];
+
+    xobjDict.entries().forEach(([key, ref]) => {
+      try {
+        let xobj = ref;
+        if (ref instanceof PDFLib.PDFRef) {
+          xobj = pdfDoc.context.lookup(ref);
+        }
+
+        if (xobj && typeof xobj.contents !== 'undefined' && xobj.dict) {
+          const subtype = xobj.dict.get(PDFName.of('Subtype'));
+          if (subtype && subtype.toString() === '/Form') {
+            // Check if this Form XObject looks like a watermark
+            if (isWatermarkFormXObject(pdfDoc, xobj, opts)) {
+              toDelete.push(key);
+              log(`    Flagging XObject /${key} as watermark`);
+            }
+          }
+        }
+      } catch(e) { /* ignore lookup errors */ }
+    });
+
+    toDelete.forEach(key => {
+      xobjDict.delete(key);
+      removed++;
+    });
+
+  } catch(e) {
+    log(`  XObject scan error: ${e.message}`);
+  }
+
+  return removed;
+}
+
+function isWatermarkFormXObject(pdfDoc, streamObj, opts) {
+  try {
+    let bytes = streamObj.contents;
+    const filter = streamObj.dict.get(PDFLib.PDFName.of('Filter'));
+    if (filter && filter.toString() === '/FlateDecode') {
+      bytes = decompressBytes(bytes);
+    }
+    if (!bytes) return false;
+
+    const text = bytesToStr(bytes);
+    const textContent = extractTextFromStream(text);
+
+    // Check keywords
+    if (opts.keywords && opts.keywords.length > 0) {
+      for (const kw of opts.keywords) {
+        if (textContent.toUpperCase().includes(kw.toUpperCase())) return true;
+      }
+    }
+
+    // Check for watermark indicators: rotation + short text
+    if (opts.removeRotated && hasRotationInStream(text) && textContent.trim().length < 200) {
+      return true;
+    }
+
+    // Check for transparency indicators
+    if (opts.removeTransparent && hasTransparencyInStream(text) && textContent.trim().length < 500) {
+      return true;
+    }
+
+    // Heuristic: very short form xobject with watermark-like characteristics
+    if (textContent.trim().length > 0 && textContent.trim().length < 100) {
+      const WATERMARK_WORDS = [
+        'watermark','confidential','draft','sample','copy','do not','restricted',
+        'internal','proprietary','classified','private','unofficial','preview',
+        'trial','evaluation','free version','ilovepdf','smallpdf','sejda',
+        'adobe','acrobat',
+      ];
+      const lower = textContent.toLowerCase();
+      for (const w of WATERMARK_WORDS) {
+        if (lower.includes(w)) return true;
+      }
+    }
+  } catch(e) { /* ignore */ }
+
+  return false;
+}
+
+// ---- Content stream processing ----
+async function processPageContentStreams(pdfDoc, page, opts) {
+  const { PDFName } = PDFLib;
+  let processed = 0;
+  let blocksRemoved = 0;
+
+  const pageNode = page.node;
+  const contentsKey = PDFName.of('Contents');
+  const contentsVal = pageNode.get(contentsKey);
+
+  const streamRefs = [];
+
+  if (contentsVal instanceof PDFLib.PDFRef) {
+    streamRefs.push(contentsVal);
+  } else if (contentsVal instanceof PDFLib.PDFArray) {
+    for (let i = 0; i < contentsVal.size(); i++) {
+      const item = contentsVal.get(i);
+      if (item instanceof PDFLib.PDFRef) streamRefs.push(item);
+    }
+  }
+
+  for (const ref of streamRefs) {
+    try {
+      const obj = pdfDoc.context.lookup(ref);
+      if (!obj) continue;
+
+      // Check it's a stream (PDFRawStream or any stream-like object with .contents)
+      if (!obj || typeof obj.contents === 'undefined') continue;
+
+      const result = processStreamObject(pdfDoc, obj, opts);
+      if (result !== null) {
+        processed++;
+        blocksRemoved += result;
+      }
+    } catch(e) {
+      log(`  Stream processing error: ${e.message}`);
+    }
+  }
+
+  return { processed, blocksRemoved };
+}
+
+function processStreamObject(pdfDoc, streamObj, opts) {
+  const { PDFName } = PDFLib;
+
+  let rawBytes = streamObj.contents;
+  if (!rawBytes || rawBytes.length === 0) return null;
+
+  const filterVal = streamObj.dict.get(PDFName.of('Filter'));
+  let filterName = filterVal ? filterVal.toString() : null;
+
+  // Handle array of filters (take first)
+  if (filterVal instanceof PDFLib.PDFArray) {
+    const first = filterVal.get(0);
+    filterName = first ? first.toString() : null;
+  }
+
+  let decompressed = rawBytes;
+  let wasCompressed = false;
+
+  if (filterName === '/FlateDecode') {
+    try {
+      decompressed = decompressBytes(rawBytes);
+      wasCompressed = true;
+    } catch(e) {
+      log(`  Decompress failed: ${e.message}`);
+      return null;
+    }
+  } else if (filterName && filterName !== '/Identity') {
+    // Unsupported filter (ASCII85, JBIG2, etc.) - skip
+    return null;
+  }
+
+  const streamText = bytesToStr(decompressed);
+  const { result: newText, blocksRemoved } = processStreamText(streamText, opts);
+
+  if (blocksRemoved === 0) return 0;
+
+  // Write back
+  const newBytes = strToBytes(newText);
+
+  if (wasCompressed) {
+    try {
+      const compressed = pako.deflate(newBytes);
+      streamObj.contents = compressed;
+      streamObj.dict.set(PDFName.of('Length'), pdfDoc.context.obj(compressed.length));
+      streamObj.dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+    } catch(e) {
+      // Fallback: store uncompressed
+      streamObj.contents = newBytes;
+      streamObj.dict.set(PDFName.of('Length'), pdfDoc.context.obj(newBytes.length));
+      streamObj.dict.delete(PDFName.of('Filter'));
+      streamObj.dict.delete(PDFName.of('DecodeParms'));
+    }
+  } else {
+    streamObj.contents = newBytes;
+    streamObj.dict.set(PDFName.of('Length'), pdfDoc.context.obj(newBytes.length));
+  }
+
+  return blocksRemoved;
+}
+
+// ============================================================
+// CONTENT STREAM TEXT PROCESSOR
+// ============================================================
+
+function processStreamText(text, opts) {
+  const tokens = tokenize(text);
+  const result = [];
+  let i = 0;
+  let blocksRemoved = 0;
+
+  while (i < tokens.length) {
+    const tok = tokens[i];
+
+    // Try to capture a q...Q block
+    if (tok.type === 'op' && tok.value === 'q') {
+      const block = captureQBlock(tokens, i);
+      if (block) {
+        if (shouldRemoveBlock(block.tokens, opts)) {
+          blocksRemoved++;
+          i = block.end + 1;
+          continue;
+        }
+        // Don't skip – fall through and push token by token
+      }
+    }
+
+    // Try to capture a bare BT...ET block (no wrapping q/Q)
+    if (tok.type === 'op' && tok.value === 'BT') {
+      const btBlock = captureBTBlock(tokens, i);
+      if (btBlock && shouldRemoveBTBlock(btBlock.tokens, opts)) {
+        blocksRemoved++;
+        i = btBlock.end + 1;
+        continue;
+      }
+    }
+
+    result.push(tok.raw);
+    i++;
+  }
+
+  return { result: result.join(''), blocksRemoved };
+}
+
+function shouldRemoveBlock(tokens, opts) {
+  const textContent = extractTextFromTokens(tokens);
+  if (!textContent.trim()) return false; // no text → not a watermark
+
+  // Check keywords
+  if (opts.keywords && opts.keywords.length > 0) {
+    const upper = textContent.toUpperCase();
+    for (const kw of opts.keywords) {
+      if (upper.includes(kw.toUpperCase())) {
+        log(`    Removing block: keyword "${kw}" found`);
+        return true;
+      }
+    }
+  }
+
+  // Check rotation (cm operator with non-zero b/c components)
+  if (opts.removeRotated && hasRotationInTokens(tokens)) {
+    log(`    Removing block: rotation detected (text: "${textContent.trim().slice(0,40)}")`);
+    return true;
+  }
+
+  // Check transparency (gs operator preceding text, or low-gray color)
+  if (opts.removeTransparent && hasTransparencyInTokens(tokens)) {
+    log(`    Removing block: transparency detected (text: "${textContent.trim().slice(0,40)}")`);
+    return true;
+  }
+
+  return false;
+}
+
+function shouldRemoveBTBlock(tokens, opts) {
+  // Only remove bare BT...ET blocks if they match keywords (safer)
+  const textContent = extractTextFromTokens(tokens);
+  if (!textContent.trim()) return false;
+
+  if (opts.keywords && opts.keywords.length > 0) {
+    const upper = textContent.toUpperCase();
+    for (const kw of opts.keywords) {
+      if (upper.includes(kw.toUpperCase())) {
+        log(`    Removing BT block: keyword "${kw}" found`);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// ============================================================
+// TOKENIZER
+// ============================================================
+
+function tokenize(text) {
+  const tokens = [];
+  let i = 0;
+  const len = text.length;
+
+  while (i < len) {
+    const start = i;
+    const ch = text[i];
+
+    // Whitespace
+    if (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n' || ch === '\f') {
+      let ws = '';
+      while (i < len && isWS(text[i])) ws += text[i++];
+      tokens.push({ type: 'ws', value: ws, raw: ws });
+      continue;
+    }
+
+    // Comment
+    if (ch === '%') {
+      let s = '';
+      while (i < len && text[i] !== '\n' && text[i] !== '\r') s += text[i++];
+      tokens.push({ type: 'comment', value: s, raw: s });
+      continue;
+    }
+
+    // Literal string (...)
+    if (ch === '(') {
+      let s = '('; i++;
+      let depth = 1;
+      while (i < len && depth > 0) {
+        const c = text[i];
+        if (c === '\\' && i+1 < len) { s += c + text[i+1]; i += 2; }
+        else if (c === '(') { depth++; s += c; i++; }
+        else if (c === ')') { depth--; s += c; i++; }
+        else { s += c; i++; }
+      }
+      tokens.push({ type: 'string', value: s, raw: s });
+      continue;
+    }
+
+    // Hex string <...> or dict <<...>>
+    if (ch === '<') {
+      if (i+1 < len && text[i+1] === '<') {
+        // Dictionary
+        let s = '<<'; let depth = 1; i += 2;
+        while (i < len && depth > 0) {
+          if (text[i] === '<' && i+1 < len && text[i+1] === '<') { depth++; s += '<<'; i += 2; }
+          else if (text[i] === '>' && i+1 < len && text[i+1] === '>') { depth--; s += '>>'; i += 2; }
+          else { s += text[i++]; }
+        }
+        tokens.push({ type: 'dict', value: s, raw: s });
+      } else {
+        let s = '<'; i++;
+        while (i < len && text[i] !== '>') s += text[i++];
+        if (i < len) { s += '>'; i++; }
+        tokens.push({ type: 'hexstring', value: s, raw: s });
+      }
+      continue;
+    }
+
+    // Array [...]
+    if (ch === '[') {
+      let s = '['; let depth = 1; i++;
+      while (i < len && depth > 0) {
+        const c = text[i];
+        if (c === '[') { depth++; s += c; i++; }
+        else if (c === ']') { depth--; s += c; i++; }
+        else if (c === '(') {
+          // String inside array
+          s += '('; i++; let sd = 1;
+          while (i < len && sd > 0) {
+            const sc = text[i];
+            if (sc === '\\' && i+1 < len) { s += sc + text[i+1]; i += 2; }
+            else if (sc === '(') { sd++; s += sc; i++; }
+            else if (sc === ')') { sd--; s += sc; i++; }
+            else { s += sc; i++; }
+          }
+        } else { s += c; i++; }
+      }
+      tokens.push({ type: 'array', value: s, raw: s });
+      continue;
+    }
+
+    // Name /...
+    if (ch === '/') {
+      let s = '/'; i++;
+      while (i < len && !isDelim(text[i])) s += text[i++];
+      tokens.push({ type: 'name', value: s, raw: s });
+      continue;
+    }
+
+    // Number or operator keyword
+    let word = '';
+    while (i < len && !isDelim(text[i]) && !isWS(text[i])) word += text[i++];
+    if (word) {
+      if (/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(word)) {
+        tokens.push({ type: 'number', value: word, raw: word });
+      } else if (word === 'true' || word === 'false') {
+        tokens.push({ type: 'bool', value: word, raw: word });
+      } else if (word === 'null') {
+        tokens.push({ type: 'null', value: word, raw: word });
+      } else {
+        tokens.push({ type: 'op', value: word, raw: word });
+      }
+    }
+  }
+
+  return tokens;
+}
+
+function isWS(c) { return c === ' ' || c === '\t' || c === '\r' || c === '\n' || c === '\f'; }
+function isDelim(c) { return '()<>[]{}/%'.includes(c); }
+
+// ============================================================
+// BLOCK CAPTURE
+// ============================================================
+
+function captureQBlock(tokens, start) {
+  // tokens[start] must be 'q' op
+  let depth = 0;
+  for (let i = start; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type === 'op') {
+      if (tok.value === 'q') depth++;
+      else if (tok.value === 'Q') {
+        depth--;
+        if (depth === 0) return { tokens: tokens.slice(start, i+1), end: i };
+      }
+    }
+  }
+  return null; // unclosed q
+}
+
+function captureBTBlock(tokens, start) {
+  // tokens[start] must be 'BT' op
+  for (let i = start+1; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type === 'op' && tok.value === 'ET') {
+      return { tokens: tokens.slice(start, i+1), end: i };
+    }
+    if (tok.type === 'op' && tok.value === 'BT') break; // malformed, abort
+  }
+  return null;
+}
+
+// ============================================================
+// BLOCK ANALYSIS HELPERS
+// ============================================================
+
+function extractTextFromTokens(tokens) {
+  let text = '';
+  let inText = false;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type === 'op') {
+      if (tok.value === 'BT') inText = true;
+      else if (tok.value === 'ET') inText = false;
+    }
+    if (inText) {
+      if (tok.type === 'string') {
+        text += decodeStringToken(tok.value);
+      } else if (tok.type === 'hexstring') {
+        text += decodeHexToken(tok.value);
+      } else if (tok.type === 'array') {
+        text += extractTextFromArray(tok.value);
+      }
+    }
+  }
+  return text;
+}
+
+function decodeStringToken(s) {
+  // s is like (Hello\nWorld)
+  let inner = s.slice(1, -1);
+  let out = '';
+  let i = 0;
+  while (i < inner.length) {
+    if (inner[i] === '\\') {
+      i++;
+      if (i >= inner.length) break;
+      switch (inner[i]) {
+        case 'n': out += '\n'; break;
+        case 'r': out += '\r'; break;
+        case 't': out += '\t'; break;
+        case 'b': out += '\b'; break;
+        case 'f': out += '\f'; break;
+        case '(': out += '('; break;
+        case ')': out += ')'; break;
+        case '\\': out += '\\'; break;
+        default:
+          if (/[0-7]/.test(inner[i])) {
+            let oct = inner[i];
+            if (i+1 < inner.length && /[0-7]/.test(inner[i+1])) { oct += inner[++i]; }
+            if (i+1 < inner.length && /[0-7]/.test(inner[i+1])) { oct += inner[++i]; }
+            out += String.fromCharCode(parseInt(oct, 8));
+          } else {
+            out += inner[i];
+          }
+      }
+      i++;
+    } else {
+      out += inner[i++];
+    }
+  }
+  return out;
+}
+
+function decodeHexToken(s) {
+  const hex = s.slice(1, -1).replace(/\s/g, '');
+  let out = '';
+  for (let i = 0; i < hex.length; i += 2) {
+    const code = parseInt(hex.slice(i, i+2), 16);
+    if (!isNaN(code)) out += String.fromCharCode(code);
+  }
+  return out;
+}
+
+function extractTextFromArray(s) {
+  // s is like [(Hello) -200 (World)]
+  const toks = tokenize(s.slice(1, -1));
+  let out = '';
+  for (const t of toks) {
+    if (t.type === 'string')    out += decodeStringToken(t.value);
+    if (t.type === 'hexstring') out += decodeHexToken(t.value);
+  }
+  return out;
+}
+
+function hasRotationInTokens(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type === 'op' && tok.value === 'cm') {
+      // Collect up to 6 preceding numbers
+      const nums = [];
+      let j = i - 1;
+      while (j >= 0 && nums.length < 6) {
+        if (tokens[j].type === 'number') nums.unshift(parseFloat(tokens[j].value));
+        else if (tokens[j].type !== 'ws') break;
+        j--;
+      }
+      if (nums.length >= 4) {
+        const [a, b, c, d] = nums;
+        // Pure rotation: a=cos, b=sin, c=-sin, d=cos
+        // Any significant non-zero b or c means rotation
+        if ((Math.abs(b) > 0.05 || Math.abs(c) > 0.05)) {
+          const angleDeg = Math.atan2(b, a) * 180 / Math.PI;
+          // Ignore trivial angles (near 0, 90, 180, 270)
+          const modAngle = ((angleDeg % 90) + 90) % 90;
+          if (modAngle > 3 && modAngle < 87) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function hasTransparencyInTokens(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type !== 'op') continue;
+
+    // 'gs' applies a graphics state – if the block has gs, it might use opacity
+    if (tok.value === 'gs') {
+      // Previous token should be a name like /GS1
+      let j = i - 1;
+      while (j >= 0 && tokens[j].type === 'ws') j--;
+      if (j >= 0 && tokens[j].type === 'name') {
+        // This block references an external graphics state — could include opacity
+        // We'll flag it if the block also has text and is short (likely a watermark)
+        const textContent = extractTextFromTokens(tokens);
+        if (textContent.trim().length > 0 && textContent.trim().length < 300) {
+          return true;
+        }
+      }
+    }
+
+    // Direct gray fill: e.g. '0.5 g' where 0 < gray < 0.9
+    if (tok.value === 'g' || tok.value === 'G') {
+      let j = i - 1;
+      while (j >= 0 && tokens[j].type === 'ws') j--;
+      if (j >= 0 && tokens[j].type === 'number') {
+        const v = parseFloat(tokens[j].value);
+        if (v > 0.1 && v < 0.9) return true;
+      }
+    }
+
+    // Direct RGB fill that looks gray/faded: r=g=b and each between 0.2 and 0.9
+    if (tok.value === 'rg' || tok.value === 'RG') {
+      const nums = [];
+      let j = i - 1;
+      while (j >= 0 && nums.length < 3) {
+        if (tokens[j].type === 'number') nums.unshift(parseFloat(tokens[j].value));
+        else if (tokens[j].type !== 'ws') break;
+        j--;
+      }
+      if (nums.length === 3) {
+        const [r, g, b2] = nums;
+        const isGray = Math.abs(r - g) < 0.05 && Math.abs(g - b2) < 0.05;
+        if (isGray && r > 0.1 && r < 0.9) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ---- Helpers for XObject analysis using raw stream text ----
+function extractTextFromStream(text) {
+  const tokens = tokenize(text);
+  return extractTextFromTokens(tokens);
+}
+
+function hasRotationInStream(text) {
+  return hasRotationInTokens(tokenize(text));
+}
+
+function hasTransparencyInStream(text) {
+  return hasTransparencyInTokens(tokenize(text));
+}
+
+// ============================================================
+// BYTE / STRING UTILS
+// ============================================================
+
+function bytesToStr(bytes) {
+  // Use latin-1 to preserve byte values
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return s;
+}
+
+function strToBytes(str) {
+  const arr = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) arr[i] = str.charCodeAt(i) & 0xff;
+  return arr;
+}
+
+function decompressBytes(data) {
+  // Try zlib (pako.inflate), then raw deflate (pako.inflateRaw)
+  try {
+    return pako.inflate(data);
+  } catch(e) {
+    return pako.inflateRaw(data);
+  }
+}
+</script>
+</body>
+</html>
