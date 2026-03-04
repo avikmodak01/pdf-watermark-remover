@@ -139,7 +139,7 @@ def process_pdf(pdf_bytes: bytes, options: dict):
                     continue
 
                 # 1b. Tiled personal watermark: 3+ BT blocks all with identical short text.
-                #     Handles "AVIKMODAK (204946)" × 113 pattern on every page of 1.pdf.
+                #     Handles "" × 113 pattern on every page of 1.pdf.
                 elif _is_tiled_watermark_stream(stream):
                     sample = _tiled_stream_sample_text(stream)
                     doc.update_stream(cxref, b"")
@@ -263,7 +263,7 @@ def _is_tiled_watermark_stream(stream_bytes: bytes) -> bool:
     - ≥ 3 BT blocks
     - A single dominant short text appears ≥ 3 times
     - Every non-empty, non-companion text is a substring or superset of
-      that dominant text  (handles 'AVIKMODAK' vs 'AVIKMODAK (204946)')
+      that dominant text  (handles '')
     """
     try:
         text = stream_bytes.decode("latin-1", errors="replace")
@@ -292,7 +292,7 @@ def _is_tiled_watermark_stream(stream_bytes: bytes) -> bool:
         return False
 
     # Every non-companion text must be either the dominant text, or a
-    # substring / superset of it (e.g. "AVIKMODAK" ⊂ "AVIKMODAK (204946)")
+    # substring / superset of it (e.g. "" ⊂ "")
     return all(dominant in t or t in dominant for t in non_companion)
 
 
